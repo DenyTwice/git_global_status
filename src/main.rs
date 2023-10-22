@@ -7,37 +7,27 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-
     match args.len() {
-        
         2 => { 
             let path = Path::new(&args[1]);
-            walk_dirs(&PathBuf::from(path));
+            let files_list: Vec<PathBuf> = files(&PathBuf::from(path)); 
         }
         _ => {
             println!("Usage: gg [PATH_TO_DIRECTORY]");
+
         }
     }
 }
-
-fn walk_dirs(path: &PathBuf) {
-
-    match path.read_dir() {
-        Ok(entries) => {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    println!("{}", entry.file_name().to_str().expect("ok"));
-                }
-            }
-        }
-        Err(e) => {
-            if e.kind() == std::io::ErrorKind::PermissionDenied {
-                println!("yeS");
-            }
-            else {
-                println!("dont care");
-            }
+fn files(path: &PathBuf) -> Result<Vec<PathBuf>, ErrorKind>{
+    let mut file_list: Vec<PathBuf> = Vec::new();
+    let entries = path.read_dir()?;
+    for entry in entries {
+        if let Ok(entry) = entry {
+            file_list.push(PathBuf::from(entry.file_name()));
+            println!("{}", entry.file_name().to_str().expect("ok"));
         }
     }
+    Ok(file_list)
 }
+
 fn check_status() {}
