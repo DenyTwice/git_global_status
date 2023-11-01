@@ -1,14 +1,9 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-
-use std::{env, io};
-use std::io::Error;
+use std::env;
+use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
+use std::process::exit;
 
 use git2::{Repository, StatusOptions};
-
-// get directory name -> get each dierectory in that directory -> go to each directory in that directory -> run git status
-// -> return formatted output
 
 enum GitStatus {
     NoChanges,
@@ -24,24 +19,34 @@ fn main() {
             driver(&args[1]);
         }
         _ => {
-            println!("Usage: gg [PATH_TO_DIRECTORY]");
+            println!("Usage: ggs [PATH_TO_DIRECTORY]");
         }
     }
 }
 
 fn driver(path_string: &str) {
-            let path = Path::new(&path_string);
-            let directories = directories(&PathBuf::from(path)).expect("oops");
-            
-            for directory in directories {
-                let repository = Repository::open(&directory).expect("won't happen indeed");
-                match check_status(repository) {
-                    GitStatus::NoChanges => println!("{} has no changes", directory.to_str().expect("hopefully doesn't happen")),
-                    GitStatus::Modified => println!("{} has changes", directory.to_str().expect("hopefully doesn't happen either")),
-                    GitStatus::Staged => println!("{} has staged changes", directory.to_str().expect("hopefully doesn't happen as well")),
-                    GitStatus::UnpushedCommits => println!("{} has unpushed commits", directory.to_str().expect("hopefully doesn't happen as well")),
-                }
+    let path = Path::new(&path_string);
+    let directories = match directories(&PathBuf::from(path)) {
+        Ok(dirs) => dirs,
+        Err(error) => {
+            match error.kind() {
+                ErrorKind::NotFound => println!("Directory not found."),
+                ErrorKind::PermissionDenied => println!("Permission to access directory denied."),
+                _ => println!("Error, could not read directory. Please check if given path points to a directory"),
             }
+            exit(0);
+        }
+    };
+    
+    for directory in directories {
+        let repository = Repository::open(&directory).expect("won't happen indeed");
+        match check_status(repository) {
+            GitStatus::NoChanges => println!("{} has no changes", directory.to_str().expect("hopefully doesn't happen")),
+            GitStatus::Modified => println!("{} has changes", directory.to_str().expect("hopefully doesn't happen either")),
+            GitStatus::Staged => println!("{} has staged changes", directory.to_str().expect("hopefully doesn't happen as well")),
+            GitStatus::UnpushedCommits => println!("{} has unpushed commits", directory.to_str().expect("hopefully doesn't happen as well")),
+        }
+    }
 }
 
 fn directories(path: &PathBuf) -> Result<Vec<PathBuf>, Error>{
