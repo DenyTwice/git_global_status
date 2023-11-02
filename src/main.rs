@@ -1,9 +1,16 @@
 use std::env;
+use std::io::Error as IOError;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
-use git2::{Repository, StatusOptions};
+use git2::{Repository, StatusOptions, Error};
+
+const USAGE: &str = "Usage: ggs [PATH_TO_DIRECTORY]";
+const ALL_GOOD: &str = "All good!";
+const UNPUSHED_COMMITS_MSG: &str = "Directories with unpushed commits:";
+const STAGED_CHANGES_MSG: &str = "Directories with staged changes:";
+const MODIFIED_FILES_MSG: &str = "Directories with modified files:";
 
 enum GitStatus {
     NoChanges,
@@ -19,14 +26,14 @@ fn main() {
             driver(&args[1]);
         }
         _ => {
-            println!("Usage: ggs [PATH_TO_DIRECTORY]");
+            println!("{}", USAGE);
         }
     }
 }
 
 fn driver(path_string: &str) {
     let path = Path::new(&path_string);
-    let directories = match directories(&PathBuf::from(path)) {
+    let directories: Vec<PathBuf> = match list_directories(&PathBuf::from(path)) {
         Ok(dirs) => dirs,
         Err(error) => {
             match error.kind() {
@@ -38,18 +45,44 @@ fn driver(path_string: &str) {
         }
     };
     
-    for directory in directories {
-        let repository = Repository::open(&directory).expect("won't happen indeed");
-        match check_status(repository) {
-            GitStatus::NoChanges => println!("{} has no changes", directory.to_str().expect("hopefully doesn't happen")),
-            GitStatus::Modified => println!("{} has changes", directory.to_str().expect("hopefully doesn't happen either")),
-            GitStatus::Staged => println!("{} has staged changes", directory.to_str().expect("hopefully doesn't happen as well")),
-            GitStatus::UnpushedCommits => println!("{} has unpushed commits", directory.to_str().expect("hopefully doesn't happen as well")),
+    let mut modified: Vec<String> = Vec::new();
+    let mut staged: Vec<String> = Vec::new();
+    let mut unpushed_commits: Vec<String> = Vec::new();
+    let mut no_changes: usize = 0;
+
+    for directory in &directories {
+        if let Ok(repository) = Repository::open(&directory) {
+
+            let path = match directory.to_str() {
+                        Some(str) => String::from(str),
+                        None => continue,
+            };
+
+            match check_status(repository) {
+                Ok(GitStatus::NoChanges) => no_changes += 1, 
+                Ok(GitStatus::Modified) => modified.push(path),
+                Ok(GitStatus::Staged) => staged.push(path),
+                Ok(GitStatus::UnpushedCommits) => unpushed_commits.push(path),
+                Err(_) => {
+                    println!("Could not check status for {}", path);
+                    continue
+                },
+            }
         }
+
     }
+    if no_changes == directories.len() {
+        println!("{}", ALL_GOOD);
+        exit(0);
+    }
+
+    print_status(&unpushed_commits, UNPUSHED_COMMITS_MSG);
+    print_status(&staged, STAGED_CHANGES_MSG);
+    print_status(&modified, MODIFIED_FILES_MSG)
+
 }
 
-fn directories(path: &PathBuf) -> Result<Vec<PathBuf>, Error>{
+fn list_directories(path: &PathBuf) -> Result<Vec<PathBuf>,IOError>{
 
     let mut directories: Vec<PathBuf> = Vec::new();
     for entry in path.read_dir()? {
@@ -63,34 +96,45 @@ fn directories(path: &PathBuf) -> Result<Vec<PathBuf>, Error>{
     Ok(directories)
 }
     
-fn check_status(repo: Repository) -> GitStatus {
+fn check_status(repo: Repository) -> Result<GitStatus, Error> {
 
     let mut opts = StatusOptions::new();
     opts.show(git2::StatusShow::IndexAndWorkdir);
     opts.include_untracked(true);
     opts.recurse_untracked_dirs(true);
 
-    let statuses = repo.statuses(Some(&mut opts)).expect("Could not retrieve statuses"); 
+    let statuses = match repo.statuses(Some(&mut opts)) {
+        Ok(status) => status,
+        Err(error) => return Err(error),
+    };
 
     for entry in statuses.iter() {
         let status = entry.status();
 
-
         if status.intersects(git2::Status::INDEX_NEW | git2::Status::INDEX_MODIFIED | git2::Status::INDEX_DELETED) {
-            return GitStatus::Staged;
+            return Ok(GitStatus::Staged);
         }
 
         if status.intersects(git2::Status::WT_MODIFIED | git2::Status::WT_DELETED) {
-            return GitStatus::Modified;
+            return Ok(GitStatus::Modified);
         }
 
         if has_commits_not_pushed(&repo) {
-            return GitStatus::UnpushedCommits;
+            return Ok(GitStatus::UnpushedCommits);
         }
 
     }
 
-    GitStatus::NoChanges
+    Ok(GitStatus::NoChanges)
+}
+
+fn print_status(directories: &[String], message: &str) {
+    if !directories.is_empty() {
+        println!("{}", message);
+        for directory in directories {
+            println!("  * {}", directory);
+        }
+    }
 }
 
 // refactor so your eyes don't bleed when you look at this in the future
