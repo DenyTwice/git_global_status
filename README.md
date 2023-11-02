@@ -8,6 +8,7 @@ Usage: ggs <path_to_directory>
 Move the binary in Releases to /usr/bin or other directories in PATH for global access. Don't forget to make it executable.
 
 TODO:
+- Add argument to set default directory
 - Improve format to be similar to one provided in Format.txt
 - Implement better error handling to make it safe to run on larger directories that may or may not have repositories.
 - Refactor the function that checks if there are commits pending to be pushed.
