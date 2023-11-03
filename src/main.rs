@@ -131,7 +131,7 @@ fn check_status(repo: Repository) -> Result<GitStatus, Error> {
         let status = entry.status();
 
 
-        if let Ok(_) = has_commits_not_pushed(&repo) {
+        if has_commits_not_pushed(&repo) {
             return Ok(GitStatus::UnpushedCommits);
         }
 
@@ -156,16 +156,39 @@ fn print_status(directories: &[String], message: &str) {
     }
 }
 
-fn has_commits_not_pushed(repo: &Repository) -> Result<bool, Error> {
-    let head = repo.head()?;
-    let branch_name = head.shorthand().ok_or(Error::from_str("Branch name not found"))?;
-    let local_branch = repo.find_branch(branch_name, git2::BranchType::Local)?;
-    let upstream_branch = local_branch.upstream()?;
 
-    let local_oid = repo.refname_to_id(local_branch.get().name().ok_or(Error::from_str("Local branch name not found"))?)?;
-    let upstream_oid = repo.refname_to_id(upstream_branch.get().name().ok_or(Error::from_str("Upstream branch name not found"))?)?;
+fn has_commits_not_pushed(repo: &Repository) -> bool {
+    let head = match repo.head() {
+        Ok(head) => head,
+        Err(_) => return false,
+    };
 
-    Ok(local_oid != upstream_oid)
+    let branch_name = match head.shorthand() {
+        Some(name) => name,
+        None => return false,
+    };
+
+    let local_branch = match repo.find_branch(branch_name, git2::BranchType::Local) {
+        Ok(branch) => branch,
+        Err(_) => return false,
+    };
+
+    let upstream_branch = match local_branch.upstream() {
+        Ok(branch) => branch,
+        Err(_) => return false,
+    };
+
+    let local_oid = match repo.refname_to_id(local_branch.get().name().unwrap_or("")) {
+        Ok(oid) => oid,
+        Err(_) => return false,
+    };
+
+    let upstream_oid = match repo.refname_to_id(upstream_branch.get().name().unwrap_or("")) {
+        Ok(oid) => oid,
+        Err(_) => return false,
+    };
+
+    local_oid != upstream_oid
 }
 
 fn set_default_directory(path: &String) -> Result<(), IOError> {
