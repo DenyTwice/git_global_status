@@ -131,7 +131,7 @@ fn check_status(repo: Repository) -> Result<GitStatus, Error> {
         let status = entry.status();
 
 
-        if let Ok(true) = has_commits_not_pushed(&repo) {
+        if let Ok(false) = has_commits_not_pushed(&repo) {
             return Ok(GitStatus::UnpushedCommits);
         }
 
