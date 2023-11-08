@@ -9,7 +9,7 @@ use std::process::exit;
 
 use git2::{Repository, StatusOptions, Error};
 
-const USAGE: &str = "Usage: ggs [-d] [input]";
+const USAGE: &str = "Usage: ggs [-d] <input>";
 const ALL_GOOD: &str = "All good!";
 const UNPUSHED_COMMITS_MSG: &str = "Directories with unpushed commits:";
 const STAGED_CHANGES_MSG: &str = "Directories with staged changes:";
