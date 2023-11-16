@@ -1,9 +1,6 @@
 use std::env;
-use std::fs;
-use std::fs::File;
 use std::io::Error as IOError;
-use std::io::ErrorKind;
-use std::io::Write;
+use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
 use std::process::exit;
 
@@ -24,8 +21,8 @@ enum GitStatus {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    match args.len() {
-        1 => {
+    match args.as_slice() {
+        [default] => {
             let default_directory = match get_default_directory() {
                 Ok(dir) => dir,
                 Err(_) => {
@@ -35,10 +32,10 @@ fn main() {
             };
             driver(&default_directory);
         }
-        2 => { 
+        [default, directory] => { 
             driver(&args[1]);
         }
-        3 => {
+        [_, option, _] if option == &String::from("-d") => {
             match set_default_directory(&args[2]) {
                 Ok(()) => driver(&args[2]),
                 Err(e) => println!("Error: {}. Could not set default directory.", e),
@@ -205,7 +202,7 @@ fn set_default_directory(path: &String) -> Result<(), IOError> {
         std::fs::create_dir_all(dir)?;
     } 
 
-    let mut file = File::create(&config_path)?;
+    let mut file = std::fs::File::create(&config_path)?;
     file.write_all(path.as_bytes())?;
     Ok(())
 }
@@ -220,7 +217,7 @@ fn get_default_directory() -> Result<String, IOError> {
     let mut config_path = PathBuf::from(home);
     config_path.push(".config/ggs/config.txt");
 
-    let contents = fs::read_to_string(config_path)?;
+    let contents = std::fs::read_to_string(config_path)?;
     
     Ok(contents)
 }
