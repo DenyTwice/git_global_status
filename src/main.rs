@@ -1,7 +1,9 @@
 use std::env;
+use std::fs::File;
+use std::io::prelude::*;
 use std::io::Error as IOError;
 use std::io::{ErrorKind, Write};
-use std::path::PathBuf;
+use std::path::{PathBuf, Path};
 use std::process::exit;
 
 use git2::{Repository, StatusOptions, Error};
@@ -15,7 +17,7 @@ Options:
     -v, --version           Show the version number.
     -a, --add               Add a directory to scan for repositories and check statuses.
 
-    -f, --file              Set a custom location for the configuration file. (NOT IMPLEMENTED)
+    -f, --file              Specify a custom location for the configuration file. (NOT IMPLEMENTED)
 
 Examples:
     ggs --add .             Adds the current directory's path to the config file. 
@@ -93,70 +95,85 @@ fn print_message(message: &str) {
 
 fn default(path_str: &str) {
 
-    let directories = match list_directories(&PathBuf::from(path)) {
-        Ok(dirs) => dirs,
-        Err(error) => {
-            match error.kind() {
-                ErrorKind::NotFound => println!("Directory not found."),
-                ErrorKind::PermissionDenied => println!("Permission to access directory denied."),
-                _ => println!("Error, could not read directory. Please check if given path points to a directory"),
+}
+
+fn add_to_config(path_str: &str) {
+    
+    let path = Path::new(path_str);
+    if !path.is_dir() {
+        println!("Specified path is not a directory");
+        exit(1);
+    }
+
+    let mut write_buff: Vec<PathBuf> = Vec::new();
+    if let Ok(_) = Repository::open(path) {
+        write_buff.push(PathBuf::from(path));
+    } else {
+        write_buff = dir_contents(&path.to_path_buf()); 
+    }
+
+    let home = match env::var("HOME") {
+        Ok(val) => val,
+        Err(e) => {
+            println!("Could not read HOME variable from environment, {}", e);
+            exit(0);
+        }
+    };
+
+    let mut config_path = PathBuf::from(home);
+    config_path.push(".config/ggs/config.txt");
+
+    if let Some(dir) = config_path.parent() {
+        match std::fs::create_dir_all(dir) {
+            Ok(_) => (),
+            Err(e) => {
+                println!("Coud not create required directories for configuration file, {}", e);
+                exit(1);
             }
+        }
+    } 
+
+    let mut file = match std::fs::File::create(&config_path) {
+        Ok(file) => file,
+        Err(e) => {
+            println!("ERROR: Could not create config file, {}", e);
             exit(1);
         }
     };
-    
-    let mut modified: Vec<String> = Vec::new();
-    let mut staged: Vec<String> = Vec::new();
-    let mut unpushed_commits: Vec<String> = Vec::new();
-    let mut no_changes: usize = 0;
 
-    for directory in &directories {
-        if let Ok(repository) = Repository::open(&directory) {
-
-            let path = match directory.to_str() {
-                        Some(str) => String::from(str),
-                        None => continue,
-            };
-
-            match check_status(repository) {
-                Ok(GitStatus::NoChanges) => no_changes += 1, 
-                Ok(GitStatus::Modified) => modified.push(path),
-                Ok(GitStatus::Staged) => staged.push(path),
-                Ok(GitStatus::UnpushedCommits) => unpushed_commits.push(path),
-                Err(_) => {
-                    println!("Could not check status for {}", path);
-                    continue
-                },
+    for path in write_buff {
+        let path_str = path.into_os_string()
+            .into_string()
+            .unwrap(); // TODO Proper Error hadnling 
+        match file.write_all(path_str.as_bytes()) { 
+            Ok(_) => (),
+            Err(e) => {
+                println!("Could not write {} into config file, {}", path_str, e);
             }
         }
-
     }
-    if no_changes == directories.len() {
-        println!("{}", ALL_GOOD);
-        exit(0);
-    }
-
-    print_status(&unpushed_commits, UNPUSHED_COMMITS_MSG);
-    print_status(&staged, STAGED_CHANGES_MSG);
-    print_status(&modified, MODIFIED_FILES_MSG)
-
 }
 
-fn add_to_config(path: &str) {
-}
-
-fn list_directories(path: &PathBuf) -> Result<Vec<PathBuf>,IOError>{
+fn dir_contents(path: &PathBuf) -> Vec<PathBuf> {
 
     let mut directories: Vec<PathBuf> = Vec::new();
-    for entry in path.read_dir()? {
-        if let Ok(dir) = entry {
-            if  dir.path().is_dir() {
+    let dir_content = match path.read_dir() {
+        Ok(dir_content) => dir_content,
+        Err(e) => {
+            println!("ERROR: Failed to get directory contents, {}", e);
+            exit(1);
+        }
+    };
+
+    for entry in dir_content {
+        if let Ok(dir) = entry  {
+            if dir.path().is_dir() {
                 directories.push(dir.path());
             }
         }
     }
     
-    Ok(directories)
+    directories
 }
     
 fn check_status(repo: Repository) -> Result<GitStatus, Error> {
@@ -200,7 +217,6 @@ fn print_status(directories: &[String], message: &str) {
     }
 }
 
-
 fn has_commits_not_pushed(repo: &Repository) -> bool {
     let head = match repo.head() {
         Ok(head) => head,
@@ -233,38 +249,4 @@ fn has_commits_not_pushed(repo: &Repository) -> bool {
     };
 
     local_oid != upstream_oid
-}
-
-fn add(path: &String) -> Result<(), IOError> {
- 
-    let home = match env::var("HOME") {
-        Ok(val) => val,
-        Err(e) => panic!("Couldn't read HOME environment variable ({})", e),
-    };
-
-    let mut config_path = PathBuf::from(home);
-    config_path.push(".config/ggs/config.txt");
-
-    if let Some(dir) = config_path.parent() {
-        std::fs::create_dir_all(dir)?;
-    } 
-
-    let mut file = std::fs::File::create(&config_path)?;
-    file.write_all(path.as_bytes())?;
-    Ok(())
-}
-
-fn get_default_directory() -> Result<String, IOError> {
-    let home = match env::var("HOME") {
-        Ok(val) => val,
-        Err(e) => panic!("Couldn't read HOME environment variable ({})", e),
-    };
-
-    // Create a path using the HOME variable
-    let mut config_path = PathBuf::from(home);
-    config_path.push(".config/ggs/config.txt");
-
-    let contents = std::fs::read_to_string(config_path)?;
-    
-    Ok(contents)
 }
